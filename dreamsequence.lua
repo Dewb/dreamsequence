@@ -585,6 +585,23 @@ function init()
   
   params:add_number('crow_ad_skew','AD env. skew',0, 100, 0, function(param) return percent(param:get()) end)
   
+  ------------------
+  -- SCALE SYNC PARAMS --
+  ------------------
+  params:add_group('scale_sync', 'SCALE SYNC', 7)
+  params:add_option("scale_sync_crow_query", "Send as crow.query1()", {'Off', 'On'}, 2)
+  params:set_action("scale_sync_crow_query",function(v)
+    if v == 2 then
+      norns.crow.send("ii.self.query1 = function(x) return scale end")
+    end
+  end)
+  params:add_option("scale_sync_crow_query_note_map", "Notes", {'Triad', '7th', 'Mode+Transp.', 'Mode'}, 1)
+  params:add_option("scale_sync_midi", "Send as MIDI Notes", {'Off', 'On'}, 1)
+  params:add_option("scale_sync_midi_note_map", "Notes", {'Triad', '7th', 'Mode+Transp.', 'Mode'}, 1)
+  params:add_number('scale_sync_midi_out_port', 'Port out', 1, #midi.vports, 1)
+  params:add_number('scale_sync_midi_ch','Channel', 1, 16, 1)
+  params:add_number('scale_sync_midi_octave', 'Octave', -2, 4, 0)
+
   
   -----------------------------
   -- INIT STUFF
@@ -2292,6 +2309,45 @@ function get_next_chord()
       next_chord_c = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and util.wrap(chord_pattern[pre_pattern][pre_chord_pattern_position], 1, 7) or next_chord_c
       next_chord = MusicUtil.generate_chord_scale_degree(next_chord_o * 12, params:get('mode'), next_chord_c, true)
     
+  end
+
+  sync_scale_external()
+end
+
+function sync_scale_external()
+  -- send scale/chord sync to external targets
+  if params:get('scale_sync_crow_query') == 2 then
+    local d
+    local mask = 0
+    for d = 1,7 do
+      local note = _G['map_note_' .. params:get('scale_sync_crow_query_note_map')](d, 0, true) % 12
+      mask = bit32.bor(mask, 2^note)
+    end
+    --print("mask " .. mask)
+    --norns.crow.send("ii.self.query1 = function(x) return " .. mask .. " end")
+    clock.run(function()
+      clock.sleep(0.005)
+      norns.crow.send("scale = " .. mask)
+    end)
+  end
+
+  if params:get('scale_sync_midi') == 2 then
+    local d
+    local port = params:get('scale_sync_midi_out_port')
+    local channel = params:get('scale_sync_midi_ch')
+    local octave = params:get('scale_sync_midi_octave')
+    local notes = {}
+    for d = 1,7 do
+      notes[d] = 36 + _G['map_note_' .. params:get('scale_sync_midi_note_map')](d, octave, true)
+    end
+    --print("sending scale notes")
+    --tab.print(notes)
+    for d = 1,7 do
+      midi_device[port]:note_on(notes[d], 127, channel)
+    end
+    for d = 1,7 do
+      midi_device[port]:note_off(notes[d], 127, channel)
+    end
   end
 end
 
